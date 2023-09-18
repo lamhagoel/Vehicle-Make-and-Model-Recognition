@@ -1,5 +1,6 @@
 import argparse
 import time
+import os
 
 import torch
 from torch import optim
@@ -10,7 +11,7 @@ from torchvision import models
 from tqdm import tqdm
 from copy import deepcopy
 
-from preprocess_data import create_stanford_df, create_vmmrdb_df, create_unified_df, create_dataloaders
+from preprocess_data import create_stanford_df, create_vmmrdb_df, create_unified_df, create_dataloaders, create_custom_df
 from utils import plot_loss_curves
 from preprocess_data import preprocess_images
 
@@ -60,7 +61,8 @@ def train_model(model, model_name, data_loaders, criterion, optimizer, scheduler
 
     for epoch in tqdm(range(num_epochs)):
 
-        for phase in ["train", "val"]:
+        # for phase in ["train", "val"]:
+        for phase in ["train"]:
             if phase == "train":
                 model.train()
             else:
@@ -110,6 +112,11 @@ def train_model(model, model_name, data_loaders, criterion, optimizer, scheduler
                     torch.save(model.state_dict(), "models/" + str(model_name) + "_" + str(num_epochs) + "epochs" + ".pt")
                     print("Model saved!")
 
+            if (epoch+1)%10 == 0:
+                torch.save(model.state_dict(), "models/" + str(model_name) + "_" + str(epoch+1) + "epochs" + ".pt")
+                print("Model saved!")
+
+
     # Timer
     time_elapsed = time.time() - since
     print(f'Training complete in {time_elapsed // 60:.0f}m {time_elapsed % 60:.0f}s')
@@ -129,20 +136,35 @@ def main():
     parser.add_argument("-lr", "--learning_rate", type=float, help="learning rate")
     args = vars(parser.parse_args())
 
-    dataset = "StanfordCars"
-    not_saved_stanford = preprocess_images(dataset)
-    dataset = "VMMRdb"
-    not_saved_vmmr = preprocess_images(dataset)
+    # dataset = "StanfordCars"
+    # not_saved_stanford = preprocess_images(dataset)
+    # dataset = "VMMRdb"
+    # not_saved_vmmr = preprocess_images(dataset)
 
-    df_stanford = create_stanford_df(not_saved_stanford)
-    df_vmmrdb = create_vmmrdb_df(not_saved_vmmr, min_examples=100)
-    df, num_classes = create_unified_df(df_stanford, df_vmmrdb)
-    print(f'df created!')
-    print(f'num_classes: {num_classes}')
+    dataset = "Custom"
+    not_saved_custom = preprocess_images(dataset)
+
+    # df_stanford = create_stanford_df(not_saved_stanford)
+    # df_vmmrdb = create_vmmrdb_df(not_saved_vmmr, min_examples=100)
+    # df, num_classes = create_unified_df(df_stanford, df_vmmrdb)
+    # print(f'df created!')
+    # print(f'num_classes: {num_classes}')
+    df = create_custom_df(not_saved_custom)
+    df.reset_index(drop=True, inplace=True)
+    num_classes = df["Classname"].nunique()
+    # df, num_classes = create_unified_df(df_stanford, df_vmmrdb)
 
     model_name = args["model"]
-    model, weights = initialize_model(model_name, num_classes, feature_extract=False)
+    # model, weights = initialize_model(model_name, num_classes, feature_extract=False)
+    model, _ = initialize_model(model_name[:8], 918, feature_extract=True)
+    path = os.path.dirname(__file__)
+    model.load_state_dict(torch.load(path + "/models/" + str(model_name), map_location=device))
+    fc_in_feats = model.fc.in_features
+    model.fc = nn.Linear(fc_in_feats, num_classes)
+    model.to(device)
+    # model.eval()
     print(f'model initialized!')
+
 
     lr = args["learning_rate"]
     criterion = nn.CrossEntropyLoss()

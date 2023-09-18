@@ -6,6 +6,9 @@ import os
 
 from train import initialize_model
 
+from preprocess_data import preprocess_images, create_custom_df
+
+
 from PIL import Image
 
 device = torch.device("cpu")
@@ -25,7 +28,22 @@ def predict(file, model_name="resnet50_100epochs.pt", k=5):
     img = img.unsqueeze(0)  # Add batch dimension (because single image)
     print(img.size())
 
-    df = pd.read_pickle("Data/preprocessed_data.pkl")
+    # df = pd.read_pickle("Data/preprocessed_data.pkl")
+    # num_classes = df["Classname"].nunique()
+    # num_classes = 100
+
+    dataset = "Custom"
+    not_saved_custom = preprocess_images(dataset)
+
+    # df_stanford = create_stanford_df(not_saved_stanford)
+    # df_vmmrdb = create_vmmrdb_df(not_saved_vmmr, min_examples=100)
+    # df, num_classes = create_unified_df(df_stanford, df_vmmrdb)
+    # print(f'df created!')
+    # print(f'num_classes: {num_classes}')
+    df = create_custom_df(not_saved_custom)
+    df.reset_index(drop=True, inplace=True)
+    df["Classencoded"] = df["Classname"].factorize()[0]
+    print(df.info())
     num_classes = df["Classname"].nunique()
 
     model, _ = initialize_model(model_name[:8], num_classes, feature_extract=True)

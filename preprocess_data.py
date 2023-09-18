@@ -18,6 +18,8 @@ SIZE = 224
 def resize(filepath, size=SIZE):
     img = Image.open(filepath)
 
+    # TODO: Temporarily forcing to grayscale
+    img = img.convert(mode="L")
     # If greyscale, convert to RGB
     if img.mode == "L":
         img = img.convert(mode="RGB")
@@ -45,7 +47,7 @@ def preprocess_images(dir):
         for file in tqdm(files):
 
             # Only process pictures
-            if os.path.splitext(file)[-1].lower() == ".jpg":
+            if os.path.splitext(file)[-1].lower() == ".jpg" or os.path.splitext(file)[-1].lower() == ".jpeg":
                 orig_pic_path = root + "/" + file
                 result = resize(orig_pic_path)
 
@@ -88,12 +90,17 @@ class CarsDataset(Dataset):
 
         if self.df.iloc[idx, 2] == "StanfordCars":
             filepath = self.root_dir + "StanfordCars/car_ims"
+        elif self.df.iloc[idx, 3] == "Custom":
+            filepath = self.root_dir + "Custom/" + self.df.iloc[idx, 2]
         else:
             filepath = self.root_dir + "VMMRdb/" + self.df.iloc[idx, 3]
 
         filepath = os.path.join(filepath, self.df.iloc[idx, 1])
+        # print(str(self.df.iloc[idx, 0]) + "," + str(self.df.iloc[idx, 1]) + "," + str(self.df.iloc[idx, 2]) + "," + str(self.df.iloc[idx, 3]) + "," + str(self.df.iloc[idx, 4]))
         image = Image.open(filepath)
 
+        # TODO: Temporarily forcing to grayscale
+        image = image.convert(mode="L")
         # If greyscale, convert to RGB
         if image.mode == "L":
             image = image.convert(mode="RGB")
@@ -186,14 +193,51 @@ def create_vmmrdb_df(not_saved_list, min_examples=30):
     df = df[:-1]
 
     print("VMMRdb df BEFORE removing not_saved:")
-    print(df.shape[0])
+    print(df.shape)
 
     # Remove not_saved images
     for not_saved in not_saved_list:
         df = df[df["Filename"] != not_saved]
 
     print("VMMRdb df AFTER removing not_saved:")
-    print(df.shape[0])
+    print(df.shape)
+
+    print(df.info())
+
+    return df
+
+def create_custom_df(not_saved_list, min_examples=1): # Bare minimum 1 min_examples restriction by default
+    data_list = []
+
+    print("Iterating over Custom dirs/files")
+    for root, dirs, files in tqdm(os.walk("Data/Custom", topdown=False)):
+        classfolder = root.replace("Data/Custom/", "")
+        classname = root.replace("Data/Custom/", "")
+        classname = classname.replace("_", " ")
+        classname = classname.title()
+        # Only include classes with sufficient examples
+        if len(files) >= min_examples:
+            for file in tqdm(files):
+                data_list.append([classname, file, classfolder])
+        else:
+            print(str("dir with low files:" + str(len(files)) + str(files)))
+
+    df = pd.DataFrame(data_list, columns=["Classname", "Filename", "Classfolder"])
+    df["Datasetname"] = "Custom"
+    df = df[:-1]
+
+    print("Custom df BEFORE removing not_saved:")
+    print(df.shape)
+
+    # Remove not_saved images
+    for not_saved in not_saved_list:
+        df = df[df["Filename"] != not_saved]
+
+    print("Custom df AFTER removing not_saved:")
+    print(df.shape)
+
+    print(df.info())
+
 
     return df
 
@@ -206,59 +250,76 @@ def create_unified_df(df_stanford, df_vmmrdb):
     return df, num_classes
 
 
-def create_dataloaders(df, batch_size=32):
+def create_dataloaders(df, batch_size=32, phase="train"):
     # Encode labels (for compatibility with Torch)
     df["Classencoded"] = df["Classname"].factorize()[0]
 
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-    train_transforms = transforms.Compose([transforms.Resize((224, 224)),
-                                           transforms.RandomHorizontalFlip(),
-                                           transforms.RandomRotation(15),
-                                           transforms.ToTensor(),
-                                           transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),
-                                           transforms.ColorJitter(brightness=.5, hue=.3),
-                                           normalize])
+    if phase == "train":
+        train_transforms = transforms.Compose([transforms.Resize((224, 224)),
+                                               transforms.RandomHorizontalFlip(),
+                                               transforms.RandomRotation(15),
+                                               transforms.ToTensor(),
+                                               transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),
+                                               transforms.ColorJitter(brightness=.5, hue=.3),
+                                               normalize])
 
-    valid_test_transforms = transforms.Compose([transforms.Resize((224, 224)),
+    else:
+        train_transforms = transforms.Compose([transforms.Resize((224, 224)),
                                                 transforms.ToTensor(),
                                                 normalize])
+
+    # valid_test_transforms = transforms.Compose([transforms.Resize((224, 224)),
+    #                                             transforms.ToTensor(),
+    #                                             normalize])
 
     full_dataset = CarsDataset(df=df,
                                root_dir="Data/")
 
+    print(full_dataset.labels)
+
+    train_split = full_dataset
+
+    train_indcs = range(len(full_dataset))
+    train_labels = full_dataset.labels
+# 
     # Generate indices instead of using actual data
-    train_val_indcs, test_indcs, _, _ = train_test_split(range(len(full_dataset)),
-                                                         full_dataset.labels,
-                                                         test_size=0.1,
-                                                         stratify=full_dataset.labels)
+    # train_val_indcs, test_indcs, _, _ = train_test_split(range(len(full_dataset)),
+    #                                                      full_dataset.labels,
+    #                                                      test_size=0.1,
+    #                                                      stratify=full_dataset.labels)
 
-    # generate subset based on indices
-    train_val_split = Subset(full_dataset, train_val_indcs, transform=None)  # 0.9
+    # # generate subset based on indices
+    # train_val_split = Subset(full_dataset, train_val_indcs, transform=None)  # 0.9
 
-    train_val_split_labels = []
-    for idx in train_val_indcs:
-        train_val_split_labels.append(full_dataset.labels[idx])
+    # train_val_split_labels = []
+    # for idx in train_val_indcs:
+    #     train_val_split_labels.append(full_dataset.labels[idx])
 
-    train_indcs, val_indcs, train_labels, val_labels = train_test_split(range(len(train_val_split)),
-                                                                        train_val_split_labels,
-                                                                        test_size=0.111,
-                                                                        stratify=train_val_split_labels)
+    # train_indcs, val_indcs, train_labels, val_labels = train_test_split(range(len(train_val_split)),
+    #                                                                     train_val_split_labels,
+    #                                                                     test_size=0.111,
+    #                                                                     stratify=train_val_split_labels)
 
     # Oversample all but the majority class in the training set
-    ros = RandomOverSampler()
-    train_resampled_indcs, _ = ros.fit_resample(np.array(train_indcs).reshape(-1, 1), train_labels)
+    if phase == "train":
+        ros = RandomOverSampler()
+        train_resampled_indcs, _ = ros.fit_resample(np.array(train_indcs).reshape(-1, 1), train_labels)
+
+    else:
+        train_resampled_indcs = train_indcs
 
     train_split = Subset(full_dataset, train_resampled_indcs, train_transforms)  # 0.8
-    val_split = Subset(full_dataset, val_indcs, valid_test_transforms)  # 0.1
-    test_split = Subset(full_dataset, test_indcs, valid_test_transforms)  # 0.1
+    # val_split = Subset(full_dataset, val_indcs, valid_test_transforms)  # 0.1
+    # test_split = Subset(full_dataset, test_indcs, valid_test_transforms)  # 0.1
 
     # TODO: Code to check the above sequence is creating the proper splits/class distribution
 
     dataloaders = {
-        "train": DataLoader(train_split, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True),
-        "val": DataLoader(val_split, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True),
-        "test": DataLoader(test_split, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+        phase: DataLoader(train_split, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True),
+        # "val": DataLoader(val_split, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True),
+        # "test": DataLoader(test_split, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
     }
 
     return dataloaders
