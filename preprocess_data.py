@@ -19,7 +19,7 @@ def resize(filepath, size=SIZE):
     img = Image.open(filepath)
 
     # TODO: Temporarily forcing to grayscale
-    img = img.convert(mode="L")
+    # img = img.convert(mode="L")
     # If greyscale, convert to RGB
     if img.mode == "L":
         img = img.convert(mode="RGB")
@@ -100,7 +100,7 @@ class CarsDataset(Dataset):
         image = Image.open(filepath)
 
         # TODO: Temporarily forcing to grayscale
-        image = image.convert(mode="L")
+        # image = image.convert(mode="L")
         # If greyscale, convert to RGB
         if image.mode == "L":
             image = image.convert(mode="RGB")
