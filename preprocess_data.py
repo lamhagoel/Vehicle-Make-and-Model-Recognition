@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import torch
 
-from PIL import Image
+from PIL import Image, ImageFile
 import os
 import argparse
 from scipy.io import loadmat
@@ -16,13 +16,14 @@ SIZE = 224
 
 
 def resize(filepath, size=SIZE):
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
     img = Image.open(filepath)
 
     # TODO: Temporarily forcing to grayscale
     # img = img.convert(mode="L")
     # If greyscale, convert to RGB
-    if img.mode == "L":
-        img = img.convert(mode="RGB")
+    # if img.mode == "L":
+    img = img.convert(mode="RGB")
 
     # Maintains Aspect Ratio
     img.thumbnail((SIZE, SIZE), Image.Resampling.LANCZOS)
@@ -47,7 +48,7 @@ def preprocess_images(dir):
         for file in tqdm(files):
 
             # Only process pictures
-            if os.path.splitext(file)[-1].lower() == ".jpg" or os.path.splitext(file)[-1].lower() == ".jpeg":
+            if os.path.splitext(file)[-1].lower() == ".jpg" or os.path.splitext(file)[-1].lower() == ".jpeg" or os.path.splitext(file)[-1].lower() == ".png" or os.path.splitext(file)[-1].lower() == ".webp":
                 orig_pic_path = root + "/" + file
                 result = resize(orig_pic_path)
 
@@ -102,8 +103,8 @@ class CarsDataset(Dataset):
         # TODO: Temporarily forcing to grayscale
         # image = image.convert(mode="L")
         # If greyscale, convert to RGB
-        if image.mode == "L":
-            image = image.convert(mode="RGB")
+        # if image.mode == "L":
+        image = image.convert(mode="RGB")
 
         label = self.df.loc[self.df.index[idx], "Classencoded"]
         label = torch.tensor(label)
@@ -250,9 +251,12 @@ def create_unified_df(df_stanford, df_vmmrdb):
     return df, num_classes
 
 
-def create_dataloaders(df, batch_size=32, phase="train"):
+def create_dataloaders(df, batch_size=32, phase="train", label=None):
     # Encode labels (for compatibility with Torch)
     df["Classencoded"] = df["Classname"].factorize()[0]
+    # for index, row in df.iterrows():
+    #     print(row['Classencoded'], row['Classname'])
+    # exit()
 
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
@@ -277,12 +281,14 @@ def create_dataloaders(df, batch_size=32, phase="train"):
     full_dataset = CarsDataset(df=df,
                                root_dir="Data/")
 
-    print(full_dataset.labels)
+    # print(full_dataset.labels)
 
     train_split = full_dataset
 
     train_indcs = range(len(full_dataset))
     train_labels = full_dataset.labels
+    # print(train_labels)
+    # print(train_labels.shape)
 # 
     # Generate indices instead of using actual data
     # train_val_indcs, test_indcs, _, _ = train_test_split(range(len(full_dataset)),
@@ -302,6 +308,14 @@ def create_dataloaders(df, batch_size=32, phase="train"):
     #                                                                     test_size=0.111,
     #                                                                     stratify=train_val_split_labels)
 
+    if (label is not None):
+        temp = train_labels == label
+        # print(temp)
+        train_resampled_indcs = np.where(temp==True)[0]
+        print(train_resampled_indcs[0].shape)
+        train_indcs = train_resampled_indcs
+
+
     # Oversample all but the majority class in the training set
     if phase == "train":
         ros = RandomOverSampler()
@@ -315,6 +329,8 @@ def create_dataloaders(df, batch_size=32, phase="train"):
     # test_split = Subset(full_dataset, test_indcs, valid_test_transforms)  # 0.1
 
     # TODO: Code to check the above sequence is creating the proper splits/class distribution
+
+    print(train_resampled_indcs)
 
     dataloaders = {
         phase: DataLoader(train_split, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True),

@@ -45,6 +45,7 @@ def predict(file, model_name="resnet50_100epochs.pt", k=5):
     df["Classencoded"] = df["Classname"].factorize()[0]
     print(df.info())
     num_classes = df["Classname"].nunique()
+    # print(df["Classname"].unique())
 
     model, _ = initialize_model(model_name[:8], num_classes, feature_extract=True)
     path = os.path.dirname(__file__)
@@ -56,17 +57,22 @@ def predict(file, model_name="resnet50_100epochs.pt", k=5):
 
     with torch.no_grad():
         output = model(img)
-        _, preds = torch.topk(output, k)
+        print(output.shape)
+        output = torch.nn.functional.softmax(output, dim=1)
+        probs, preds = torch.topk(output, k)
 
     preds = torch.transpose(preds, 0, 1)
     preds = preds.cpu()  # Send tensor to cpu
     preds = pd.DataFrame(preds.numpy(), columns=["Classencoded"])  # Convert to dataframe
 
+    probs = torch.transpose(probs, 0, 1)
+    probs = probs.cpu()
+
     class_encoded_matches = pd.merge(df, preds, how="inner")
     class_encoded_matches = pd.merge(preds, class_encoded_matches, how="left", on="Classencoded", sort=False)  # Preserves ordering
     classname_matches = class_encoded_matches["Classname"].unique()
 
-    return classname_matches
+    return classname_matches, probs
 
 
 def main():
@@ -80,8 +86,9 @@ def main():
     model_name = args["model"]
     k = args["topk"]
 
-    classname_matches = predict(path, model_name, k)
+    classname_matches, probs = predict(path, model_name, k)
     print(classname_matches)
+    print(probs)
 
 
 if __name__ == "__main__":

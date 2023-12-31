@@ -71,6 +71,8 @@ def train_model(model, model_name, data_loaders, criterion, optimizer, scheduler
             running_loss = 0.0
             running_corrects = 0
 
+            print(len(data_loaders[phase]))
+            i=0
             for inputs, labels in data_loaders[phase]:
                 inputs = inputs.to(device)
                 labels = labels.to(device)
@@ -89,6 +91,8 @@ def train_model(model, model_name, data_loaders, criterion, optimizer, scheduler
 
                 running_loss += float(loss) * inputs.size(0)
                 running_corrects += torch.sum(preds == labels.data).item()
+                print(i)
+                i = i+1
 
             if phase == "train":
                 scheduler.step()
@@ -109,11 +113,11 @@ def train_model(model, model_name, data_loaders, criterion, optimizer, scheduler
                 if epoch_acc > best_acc:
                     best_acc = epoch_acc
                     best_model_weights = deepcopy(model.state_dict())
-                    torch.save(model.state_dict(), "models/" + str(model_name) + "_" + str(num_epochs) + "epochs" + ".pt")
+                    torch.save(model.state_dict(), "models/" + str(model_name) + "_" + str(num_epochs) + "epochs_largeData" + ".pt")
                     print("Model saved!")
 
-            if (epoch+1)%10 == 0:
-                torch.save(model.state_dict(), "models/" + str(model_name) + "_" + str(epoch+1) + "epochs" + ".pt")
+            if (epoch+1)%5 == 0:
+                torch.save(model.state_dict(), "models/" + str(model_name) + "_" + str(epoch+1) + "epochs_largeData" + ".pt")
                 print("Model saved!")
 
 
@@ -152,6 +156,7 @@ def main():
     df = create_custom_df(not_saved_custom)
     df.reset_index(drop=True, inplace=True)
     num_classes = df["Classname"].nunique()
+    print(num_classes)
     # df, num_classes = create_unified_df(df_stanford, df_vmmrdb)
 
     model_name = args["model"]
